@@ -15,7 +15,7 @@ function App() {
             </li>
             <li>
               <Link to="/about">
-                About
+                About the app
               </Link>
             </li>
             <li>
