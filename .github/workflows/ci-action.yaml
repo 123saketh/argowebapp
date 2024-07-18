@@ -71,8 +71,8 @@ jobs:
           context: ./
           # Note: tags has to be all lower-case
           tags: |
-            123saketh/gitops01:${{ github.sha }} 
-            ghcr.io/123saketh/gitops01:${{ github.sha }}
+            123saketh/argoreactapp:${{ github.sha }} 
+            ghcr.io/123saketh/argoreactapp:${{ github.sha }}
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
 
@@ -93,7 +93,7 @@ jobs:
           git config --global user.email "123saketh@gmail.com"
           git config --global user.name "123saketh"
           echo ${{ github.sha }}
-          sed -i "s#${{ github.actor }}.*#${{ github.actor }}/gitops01:${{ github.sha }}#g" react-app/deployment.yaml
+          sed -i "s#${{ github.actor }}.*#${{ github.actor }}/argoreactapp:${{ github.sha }}#g" react-app/deployment.yaml
           git add -A
           git commit -am "Update image for - ${{ github.sha }}"
       - run: echo ${{ github }}
