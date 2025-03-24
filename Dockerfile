@@ -5,6 +5,9 @@ WORKDIR /app
 
 COPY package.json /app/
 
+ARG REACT_APP_HOMEPAGE
+ENV REACT_APP_HOMEPAGE=$REACT_APP_HOMEPAGE
+
 RUN npm i
 
 COPY . /app
