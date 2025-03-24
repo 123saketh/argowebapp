@@ -26,8 +26,6 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run build --if-present
-        env:
-          PUBLIC_URL: "/react-app"
 
   test-stage:
     runs-on: ubuntu-latest
@@ -76,6 +74,8 @@ jobs:
             123saketh/argoreactapp:${{ github.sha }} 
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
+          build-args: |
+            PUBLIC_URL=/react-app
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
