@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY package.json /app/
 
-ENV PUBLIC_URL=/myreactapp
+ENV PUBLIC_URL=/react-app
 
 RUN npm i
 
