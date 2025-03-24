@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json /app/
 
 ARG PUBLIC_URL
-ENV PUBLIC_URL=$PUBLIC_URL
+ENV PUBLIC_URL=$PUBLIC_URL 
 
 RUN npm i
 
