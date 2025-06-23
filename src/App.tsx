@@ -20,7 +20,7 @@ function App() {
             </li>
             <li>
               <Link to="/contact">
-                Contact Me
+                Contact
               </Link>
             </li>
           </ul>
