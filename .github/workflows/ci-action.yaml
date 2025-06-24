@@ -1,11 +1,15 @@
-name: Build Step
+name: Build Step # The name of your workflow, which appears in GitHub checks
 
 on:
+  # This 'push' trigger runs the full CI/CD pipeline (including Docker push and manifest update)
+  # after a successful merge or direct push to 'main'.
   push:
-    branches: ['main'] # This runs the full pipeline *after* a merge to 'main'
+    branches: ['main']
 
+  # This 'pull_request' trigger is for the mandatory pre-merge checks.
+  # It runs the 'build' and 'test-stage' jobs when a PR is opened or updated targeting 'main'.
   pull_request:
-    branches: [ "main" ] # This triggers pre-merge checks for PRs into 'main'
+    branches: [ "main" ] # This targets PRs *into* the 'main' branch
 
 jobs:
   build:
@@ -30,16 +34,22 @@ jobs:
     steps:
       - name: Running Tests
         uses: actions/checkout@v3
-      - run: echo "running tests..." # Replace with your actual test command
+      - run: echo "running tests..." # Replace with your actual test command (e.g., npm test)
 
   build-and-push-docker-image:
     name: Build Docker image and push to repositories
     runs-on: ubuntu-latest
-    needs: ['build', 'test-stage']
-    # This 'if' condition is the key. It ensures this job only runs if:
-    # 1. The event is a 'push' (not a 'pull_request') AND
-    # 2. The branch being pushed to is 'main'.
+    needs: ['build', 'test-stage'] # This job requires build and test-stage to succeed.
+    # This 'if' condition ensures this job ONLY runs on 'push' events
+    # to the 'main' branch, NOT on 'pull_request' events.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    # Concurrency group to prevent multiple concurrent deployments for the 'main' branch.
+    # Only one workflow run in this group can be in progress at a time.
+    # New runs will automatically cancel older, currently running jobs in the same group.
+    concurrency:
+      group: ${{ github.workflow }}-main-deployment
+      cancel-in-progress: true
 
     steps:
       - name: Checkout code
@@ -60,12 +70,13 @@ jobs:
           password: ${{ secrets.G_TOKEN }}
       - name: Build image and push to Docker Hub and GitHub Container Registry
         uses: docker/build-push-action@v2
+        id: docker_build # Add an ID to reference outputs
         with:
           context: ./
           tags: |
             123saketh/argoreactapp:${{ github.sha }}
             ghcr.io/123saketh/argoreactapp:${{ github.sha }}
-          push: true
+          push: true # 'push' is now controlled by the job's 'if' condition and concurrency
           build-args: |
             PUBLIC_URL=/react-app
       - name: Image digest
@@ -73,26 +84,59 @@ jobs:
 
   update-manifest-stage:
     runs-on: ubuntu-latest
-    needs: ['build-and-push-docker-image']
-    # This 'if' condition is similar, ensuring this job only runs if:
-    # 1. The event is a 'push' (not a 'pull_request') AND
-    # 2. The branch being pushed to is 'main'.
+    needs: ['build-and-push-docker-image'] # This job depends on the Docker image push passing.
+    # This 'if' condition ensures this job ONLY runs on 'push' events
+    # to the 'main' branch, NOT on 'pull_request' events.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    # Use the same concurrency group to ensure manifest updates are also serialized
+    concurrency:
+      group: ${{ github.workflow }}-main-deployment
+      cancel-in-progress: true
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout ArgoInfra Repository
+        uses: actions/checkout@v3
         with:
           repository: 123saketh/argoinfra
-          ref: 'main'
+          ref: 'main' # Assuming ArgoInfra's main is where manifests are
           token: ${{ secrets.G_TOKEN }}
-      - name: setup git config
+      - name: Setup Git Config
         run: |
           git config --global user.email "${{secrets.ARGO_EMAIL}}"
           git config --global user.name "${{secrets.ARGO_USER}}"
+
       - name: Update Deployment YAML
+        id: update_deployment_yaml # Add an ID for potential conditional steps
         run: |
-          echo ${{ github.sha }}
-          sed -i "s#${{ github.actor }}.*#123saketh/argoreactapp:${{ github.sha }}#g" react-app/deployment.yaml
+          echo "Current workflow SHA: ${{ github.sha }}"
+          # Extract currently deployed SHA from the manifest.
+          # Adjust the grep/sed pattern if the image URL changes.
+          CURRENT_DEPLOYED_IMAGE_LINE=$(grep "123saketh/argoreactapp:" react-app/deployment.yaml || true) # '|| true' prevents error if line not found
+          CURRENT_DEPLOYED_SHA=""
+          if [[ -n "$CURRENT_DEPLOYED_IMAGE_LINE" ]]; then
+            CURRENT_DEPLOYED_SHA=$(echo "$CURRENT_DEPLOYED_IMAGE_LINE" | sed -n 's/.*argoreactapp:\([^#]*\).*/\1/p')
+          fi
+
+          echo "Currently deployed SHA in manifest: $CURRENT_DEPLOYED_SHA"
+
+          # Simple comparison: if our SHA is older than or equal to the one already deployed, skip.
+          # This relies on lexical comparison of SHAs, which generally works for linear history.
+          if [ -n "$CURRENT_DEPLOYED_SHA" ] && [ "${{ github.sha }}" < "$CURRENT_DEPLOYED_SHA" ]; then
+            echo "Current workflow SHA (${{ github.sha }}) is older than currently deployed SHA ($CURRENT_DEPLOYED_SHA). Skipping manifest update to prevent rollback."
+            echo "::set-output name=skipped::true" # Set output to indicate skip
+            exit 0 # Exit successfully to indicate no error, but skip the update
+          else
+            echo "Current workflow SHA (${{ github.sha }}) is newer than currently deployed SHA ($CURRENT_DEPLOYED_SHA) or no SHA found. Proceeding with update."
+          fi
+
+          # Perform the update
+          sed -i "s#123saketh/argoreactapp:.*#123saketh/argoreactapp:${{ github.sha }}#g" react-app/deployment.yaml
+          echo "::set-output name=skipped::false" # Set output to indicate update was performed
+
       - name: Commit and Push Changes
+        # This step will only run if the manifest update was not skipped
+        if: success() && steps.update_deployment_yaml.outputs.skipped != 'true'
         run: |
           git add -A
           git commit -am "Update image for - ${{ github.sha }}"
