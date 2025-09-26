@@ -44,7 +44,7 @@ jobs:
           # This line is the key fix. It tells the action to use your token.
           github-token: ${{ secrets.G_TOKEN }}
           script: |
-            // Function to group defects by rule and file
+            // Function to group defects by rule, file, and priority
             function groupDefects(defectsJson) {
               if (!defectsJson || defectsJson === '[]') {
                 return [];
@@ -53,7 +53,8 @@ jobs:
               const grouped = new Map();
 
               defects.forEach(defect => {
-                const key = `${defect.rule}|${defect.file}`;
+                // The key includes rule, file, and priority for accurate grouping
+                const key = `${defect.rule}|${defect.file}|${defect.priority}`;
                 if (grouped.has(key)) {
                   grouped.get(key).count++;
                 } else {
@@ -63,6 +64,7 @@ jobs:
 
               return Array.from(grouped.values());
             }
+            
             // Use the outputs from the mock_inputs step
             const analysisUrl = '${{ steps.mock_inputs.outputs.kiuwan_analysis_url }}';
             const gateStatus = '${{ steps.mock_inputs.outputs.quality_gate_status }}';
@@ -95,18 +97,20 @@ jobs:
             const groupedNewDefects = groupDefects(newDefectsJson);
             if (groupedNewDefects.length > 0) {
               commentSections += '\n**New Vulnerabilities**\n\n';
-              commentSections += '| Count | Rule | File | Priority |\n';
-              commentSections += '|:-----:|------|------|----------|\n';
-              commentSections += groupedNewDefects.map(defect => `| ${defect.count} | ${defect.rule} | \`${defect.file}\` | **${defect.priority}** |`).join('\n');
+              // Update the table header to place 'Count' at the end
+              commentSections += '| Rule | File | Priority | Count |\n';
+              commentSections += '|------|------|----------|:-----:|\n';
+              commentSections += groupedNewDefects.map(defect => `| ${defect.rule} | \`${defect.file}\` | **${defect.priority}** | ${defect.count} |`).join('\n');
               commentSections += '\n';
             }
 
             const groupedRemovedDefects = groupDefects(removedDefectsJson);
             if (groupedRemovedDefects.length > 0) {
               commentSections += '\n**Defects Removed**\n\n';
-              commentSections += '| Count | Rule | File | Priority |\n';
-              commentSections += '|:-----:|------|------|----------|\n';
-              commentSections += groupedRemovedDefects.map(defect => `| ${defect.count} | ${defect.rule} | \`${defect.file}\` | **${defect.priority}** |`).join('\n');
+              // Update the table header to place 'Count' at the end
+              commentSections += '| Rule | File | Priority | Count |\n';
+              commentSections += '|------|------|----------|:-----:|\n';
+              commentSections += groupedRemovedDefects.map(defect => `| ${defect.rule} | \`${defect.file}\` | **${defect.priority}** | ${defect.count} |`).join('\n');
               commentSections += '\n';
             }
 
