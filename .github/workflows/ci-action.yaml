@@ -28,7 +28,7 @@ jobs:
           echo "quality_gate_status=FAILED" >> $GITHUB_OUTPUT
           
           # Mock the JSON output for new defects
-          NEW_DEFECTS_JSON='[]'
+          NEW_DEFECTS_JSON='[{"file": "src/new/security.c", "rule": "Unused variable", "priority": "High"}]'
           REMOVED_DEFECTS_JSON='[{"file": "src/new/security.c", "rule": "Unused variable", "priority": "High"},{"file": "src/util/typescript.js", "rule": "Declaration of catch", "priority": "Normal"},{"file": "src/util/typescript.js", "rule": "Declaration of catch", "priority": "High"},{"file": "src/util/typescript.js", "rule": "Declaration of catch", "priority": "High"},{"file": "src/util/typescript.js", "rule": "Declaration of catch", "priority": "High"}]'
           echo "new_defects=$NEW_DEFECTS_JSON" >> $GITHUB_OUTPUT
           
