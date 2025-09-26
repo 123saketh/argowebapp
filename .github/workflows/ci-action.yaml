@@ -21,21 +21,21 @@ jobs:
       # Define the API URL as an environment variable for the job
       KIUWAN_API_URL: "https://api.kiuwan.com"
     steps:
-      - name: Mock Kiuwan Scan and Quality Gate Results (PASSED Scenario)
+      - name: Mock Kiuwan Scan and Quality Gate Results (FAILED Scenario)
         id: mock_inputs
         run: |
-          # --- Scenario 1: PASSED (New Defects = 0, Removed Defects > 0) ---
-          echo "quality_gate_status=PASSED" >> $GITHUB_OUTPUT
+          # --- Scenario: FAILED (New Defects > 0) ---
+          echo "quality_gate_status=FAILED" >> $GITHUB_OUTPUT
+          
+          # Mock the JSON output for new defects
+          NEW_DEFECTS_JSON='[{"file": "src/new/security.java", "rule": "KW.JAVA.22", "priority": "Very_High"},{"file": "src/util/helper.js", "rule": "KW.JS.102", "priority": "Low"}]'
+          echo "new_defects=$NEW_DEFECTS_JSON" >> $GITHUB_OUTPUT
           
           # Mock the JSON output for removed defects
-          REMOVED_DEFECTS_JSON='[{"file": "src/fix/oldbug.js", "rule": "KW.JS.100", "priority": "High"}]'
-          echo "removed_defects=$REMOVED_DEFECTS_JSON" >> $GITHUB_OUTPUT
-          
-          # Mock the JSON output for new defects (empty for PASSED)
-          echo "new_defects=[]" >> $GITHUB_OUTPUT
+          echo "removed_defects=[]" >> $GITHUB_OUTPUT
           
           # Mock the Analysis URL
-          echo "kiuwan_analysis_url=https://www.kiuwan.com/app/analysis/MOCK-URL-PASS" >> $GITHUB_OUTPUT
+          echo "kiuwan_analysis_url=https://www.kiuwan.com/app/analysis/MOCK-URL-FAIL" >> $GITHUB_OUTPUT
       - name: Post Kiuwan Comment 📝
         if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@v6
