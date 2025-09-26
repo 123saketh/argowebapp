@@ -12,6 +12,100 @@ on:
     branches: [ "main" ] # This targets PRs *into* the 'main' branch
 
 jobs:
+  kiuwan-scan:
+    name: Kiuwan security scan test
+    runs-on: ubuntu-latest
+    env:
+      # Define a job-level environment variable for the application name.
+      APPLICATION_NAME: "TestEquity - Extensions"
+      # Define the API URL as an environment variable for the job
+      KIUWAN_API_URL: "https://api.kiuwan.com"
+    steps:
+      - name: Mock Kiuwan Scan and Quality Gate Results (PASSED Scenario)
+        id: mock_inputs
+        run: |
+          # --- Scenario 1: PASSED (New Defects = 0, Removed Defects > 0) ---
+          echo "quality_gate_status=PASSED" >> $GITHUB_OUTPUT
+          
+          # Mock the JSON output for removed defects
+          REMOVED_DEFECTS_JSON='[{"file": "src/fix/oldbug.js", "rule": "KW.JS.100", "priority": "High"}]'
+          echo "removed_defects=$REMOVED_DEFECTS_JSON" >> $GITHUB_OUTPUT
+          
+          # Mock the JSON output for new defects (empty for PASSED)
+          echo "new_defects=[]" >> $GITHUB_OUTPUT
+          
+          # Mock the Analysis URL
+          echo "kiuwan_analysis_url=https://www.kiuwan.com/app/analysis/MOCK-URL-PASS" >> $GITHUB_OUTPUT
+      - name: Post Kiuwan Comment 📝
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const analysisUrl = process.env.KIUWAN_ANALYSIS_URL;
+            const gateStatus = '${{ steps.check_quality_gate.outputs.quality_gate_status }}';
+            const newDefectsJson = '${{ steps.check_quality_gate.outputs.new_defects }}';
+            const removedDefectsJson = '${{ steps.check_quality_gate.outputs.removed_defects }}';
+
+            let statusEmoji = '';
+            let statusMessage = '';
+            let commentSections = '';
+
+            if (gateStatus === 'NO_BASELINE') {
+              statusEmoji = '⚠️';
+              statusMessage = 'Could not find a baseline analysis for the `develop` branch. Quality gate check skipped.';
+            } else if (gateStatus === 'PASSED') {
+              statusEmoji = '✅';
+              statusMessage = 'Quality Gate PASSED. No new vulnerabilities were found compared to the `develop` baseline.';
+            } else if (gateStatus === 'FAILED') {
+              statusEmoji = '❌';
+              statusMessage = 'Quality Gate FAILED. New vulnerabilities were found. Please check the full report.';
+            } else if (gateStatus === 'IN_PROGRESS') {
+              statusEmoji = '⏳';
+              statusMessage = 'Analysis is in progress and will complete asynchronously. Check back later for the full results.';
+            } else {
+              statusEmoji = '❓';
+              statusMessage = 'Status could not be retrieved.';
+            }
+
+            const urlText = analysisUrl ? `**Analysis URL:** ${analysisUrl}` : `**Analysis URL:** Not yet available.`;
+
+            if (newDefectsJson && newDefectsJson !== '[]') {
+              const newDefects = JSON.parse(newDefectsJson);
+              commentSections += '\n**New Vulnerabilities**\n\n';
+              commentSections += '| Rule | File | Priority |\n';
+              commentSections += '|------|------|----------|\n';
+              commentSections += newDefects.map(defect => `| ${defect.rule} | \`${defect.file}\` | **${defect.priority}** |`).join('\n');
+              commentSections += '\n';
+            }
+
+            if (removedDefectsJson && removedDefectsJson !== '[]') {
+              const removedDefects = JSON.parse(removedDefectsJson);
+              commentSections += '\n**Defects Removed**\n\n';
+              commentSections += '| Rule | File | Priority |\n';
+              commentSections += '|------|------|----------|\n';
+              commentSections += removedDefects.map(defect => `| ${defect.rule} | \`${defect.file}\` | **${defect.priority}** |`).join('\n');
+              commentSections += '\n';
+            }
+
+            const commentBody = `
+              ### Kiuwan Analysis Results
+              **Extensions Quality Gate Status:** ${statusEmoji} ${statusMessage}
+
+              ${urlText}
+
+              ${commentSections}
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
+        env:
+          KIUWAN_ANALYSIS_URL: ${{ steps.kiuwan_scan.outputs.kiuwan_analysis_url }}
+          NEW_DEFECTS_JSON: ${{ steps.check_quality_gate.outputs.new_defects }}
+          REMOVED_DEFECTS_JSON: ${{ steps.check_quality_gate.outputs.removed_defects }}
   build:
     runs-on: ubuntu-latest
     strategy:
