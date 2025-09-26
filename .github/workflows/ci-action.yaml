@@ -44,6 +44,25 @@ jobs:
           # This line is the key fix. It tells the action to use your token.
           github-token: ${{ secrets.G_TOKEN }}
           script: |
+            // Function to group defects by rule and file
+            function groupDefects(defectsJson) {
+              if (!defectsJson || defectsJson === '[]') {
+                return [];
+              }
+              const defects = JSON.parse(defectsJson);
+              const grouped = new Map();
+
+              defects.forEach(defect => {
+                const key = `${defect.rule}|${defect.file}`;
+                if (grouped.has(key)) {
+                  grouped.get(key).count++;
+                } else {
+                  grouped.set(key, { ...defect, count: 1 });
+                }
+              });
+
+              return Array.from(grouped.values());
+            }
             // Use the outputs from the mock_inputs step
             const analysisUrl = '${{ steps.mock_inputs.outputs.kiuwan_analysis_url }}';
             const gateStatus = '${{ steps.mock_inputs.outputs.quality_gate_status }}';
@@ -73,21 +92,21 @@ jobs:
 
             const urlText = analysisUrl ? `**Analysis URL:** ${analysisUrl}` : `**Analysis URL:** Not yet available.`;
 
-            if (newDefectsJson && newDefectsJson !== '[]') {
-              const newDefects = JSON.parse(newDefectsJson);
+            const groupedNewDefects = groupDefects(newDefectsJson);
+            if (groupedNewDefects.length > 0) {
               commentSections += '\n**New Vulnerabilities**\n\n';
-              commentSections += '| Rule | File | Priority |\n';
-              commentSections += '|------|------|----------|\n';
-              commentSections += newDefects.map(defect => `| ${defect.rule} | \`${defect.file}\` | **${defect.priority}** |`).join('\n');
+              commentSections += '| Count | Rule | File | Priority |\n';
+              commentSections += '|:-----:|------|------|----------|\n';
+              commentSections += groupedNewDefects.map(defect => `| ${defect.count} | ${defect.rule} | \`${defect.file}\` | **${defect.priority}** |`).join('\n');
               commentSections += '\n';
             }
 
-            if (removedDefectsJson && removedDefectsJson !== '[]') {
-              const removedDefects = JSON.parse(removedDefectsJson);
+            const groupedRemovedDefects = groupDefects(removedDefectsJson);
+            if (groupedRemovedDefects.length > 0) {
               commentSections += '\n**Defects Removed**\n\n';
-              commentSections += '| Rule | File | Priority |\n';
-              commentSections += '|------|------|----------|\n';
-              commentSections += removedDefects.map(defect => `| ${defect.rule} | \`${defect.file}\` | **${defect.priority}** |`).join('\n');
+              commentSections += '| Count | Rule | File | Priority |\n';
+              commentSections += '|:-----:|------|------|----------|\n';
+              commentSections += groupedRemovedDefects.map(defect => `| ${defect.count} | ${defect.rule} | \`${defect.file}\` | **${defect.priority}** |`).join('\n');
               commentSections += '\n';
             }
 
