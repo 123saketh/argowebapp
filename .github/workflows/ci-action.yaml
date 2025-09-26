@@ -4,7 +4,7 @@ on:
   # This 'push' trigger runs the full CI/CD pipeline (including Docker push and manifest update)
   # after a successful merge or direct push to 'main'.
   push:
-    branches: ['main']
+    branches: ['main'] 
 
   # This 'pull_request' trigger is for the mandatory pre-merge checks.
   # It runs the 'build' and 'test-stage' jobs when a PR is opened or updated targeting 'main'.
