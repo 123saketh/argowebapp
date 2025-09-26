@@ -41,10 +41,11 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const analysisUrl = process.env.KIUWAN_ANALYSIS_URL;
-            const gateStatus = '${{ steps.check_quality_gate.outputs.quality_gate_status }}';
-            const newDefectsJson = '${{ steps.check_quality_gate.outputs.new_defects }}';
-            const removedDefectsJson = '${{ steps.check_quality_gate.outputs.removed_defects }}';
+            // Use the outputs from the mock_inputs step
+            const analysisUrl = '${{ steps.mock_inputs.outputs.kiuwan_analysis_url }}';
+            const gateStatus = '${{ steps.mock_inputs.outputs.quality_gate_status }}';
+            const newDefectsJson = '${{ steps.mock_inputs.outputs.new_defects }}';
+            const removedDefectsJson = '${{ steps.mock_inputs.outputs.removed_defects }}';
 
             let statusEmoji = '';
             let statusMessage = '';
