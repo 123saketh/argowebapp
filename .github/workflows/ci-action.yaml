@@ -103,11 +103,13 @@ jobs:
               body: commentBody
             });
         env:
-          KIUWAN_ANALYSIS_URL: ${{ steps.kiuwan_scan.outputs.kiuwan_analysis_url }}
-          NEW_DEFECTS_JSON: ${{ steps.check_quality_gate.outputs.new_defects }}
-          REMOVED_DEFECTS_JSON: ${{ steps.check_quality_gate.outputs.removed_defects }}
+          # Note: Must reference the output of the mock_inputs step
+          KIUWAN_ANALYSIS_URL: ${{ steps.mock_inputs.outputs.kiuwan_analysis_url }}
+          NEW_DEFECTS_JSON: ${{ steps.mock_inputs.outputs.new_defects }}
+          REMOVED_DEFECTS_JSON: ${{ steps.mock_inputs.outputs.removed_defects }}
   build:
     runs-on: ubuntu-latest
+    needs: ['kiuwan-scan']
     strategy:
       matrix:
         node-version: [v18.17.0]
