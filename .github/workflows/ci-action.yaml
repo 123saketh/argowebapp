@@ -33,7 +33,7 @@ jobs:
           echo "new_defects=$NEW_DEFECTS_JSON" >> $GITHUB_OUTPUT
           
           # Mock the JSON output for removed defects
-          echo "removed_defects=REMOVED_DEFECTS_JSON" >> $GITHUB_OUTPUT
+          echo "removed_defects=$REMOVED_DEFECTS_JSON" >> $GITHUB_OUTPUT
           
           # Mock the Analysis URL
           echo "kiuwan_analysis_url=https://www.kiuwan.com/app/analysis/MOCK-URL-FAIL" >> $GITHUB_OUTPUT
