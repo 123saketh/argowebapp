@@ -29,10 +29,11 @@ jobs:
           
           # Mock the JSON output for new defects
           NEW_DEFECTS_JSON='[{"file": "src/new/security.java", "rule": "KW.JAVA.22", "priority": "Very_High"},{"file": "src/util/helper.js", "rule": "KW.JS.102", "priority": "Low"}]'
+          REMOVED_DEFECTS_JSON='[{"file": "src/new/security.c", "rule": "Unused variable", "priority": "High"},{"file": "src/util/typescript.js", "rule": "Declaration of catch", "priority": "High"},{"file": "src/util/typescript.js", "rule": "Declaration of catch", "priority": "High"},{"file": "src/util/typescript.js", "rule": "Declaration of catch", "priority": "High"},{"file": "src/util/typescript.js", "rule": "Declaration of catch", "priority": "High"}]'
           echo "new_defects=$NEW_DEFECTS_JSON" >> $GITHUB_OUTPUT
           
           # Mock the JSON output for removed defects
-          echo "removed_defects=[]" >> $GITHUB_OUTPUT
+          echo "removed_defects=REMOVED_DEFECTS_JSON" >> $GITHUB_OUTPUT
           
           # Mock the Analysis URL
           echo "kiuwan_analysis_url=https://www.kiuwan.com/app/analysis/MOCK-URL-FAIL" >> $GITHUB_OUTPUT
