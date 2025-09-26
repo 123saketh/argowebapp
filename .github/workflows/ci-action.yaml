@@ -40,6 +40,8 @@ jobs:
         if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@v6
         with:
+          # This line is the key fix. It tells the action to use your token.
+          token: ${{ secrets.G_TOKEN }}
           script: |
             // Use the outputs from the mock_inputs step
             const analysisUrl = '${{ steps.mock_inputs.outputs.kiuwan_analysis_url }}';
