@@ -102,10 +102,14 @@ jobs:
             echo "--- DEBUG: SECURITY RULE CODES ---"
             echo "$SECURITY_RULE_CODES" | jq .
             echo "----------------------------------"
+
+            echo $SECURITY_RULE_CODES
       
             FULL_NEW_DEFECTS_JSON=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
               "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE/defects/compare/$BASELINE_CODE/new")
       
+            echo $FULL_NEW_DEFECTS_JSON
+            
             NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES" '
               if (type == "object" and has("New defects")) then
                 (."New defects" // [])
