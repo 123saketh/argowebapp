@@ -104,6 +104,7 @@ jobs:
             echo "----------------------------------"
 
             echo $SECURITY_RULE_CODES
+            export SECURITY_RULES_JSON="$SECURITY_RULE_CODES"
       
             FULL_NEW_DEFECTS_JSON=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
               "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE/defects/compare/$BASELINE_CODE/new")
@@ -112,16 +113,16 @@ jobs:
 
             echo "Got FULL_NEW_DEFECTS_JSON"
             
-            NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules $SECURITY_RULE_CODES '
-              if (type == "object" and has("New defects")) then
-                (."New defects" // [])
+            NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c . as $input | ($ENV.SECURITY_RULES_JSON | fromjson) as $security_rules_array |
+              if ($input | type == "object" and has("New defects")) then
+                ($input."New defects" // [])
                 | map(
                     select(
                       type == "object"
                       and has("ruleCode")
                       and has("rule")
                       and (.muted | not)
-                      and any($security_rules[]; . == .ruleCode)
+                      and any($security_rules_array[]; . == .ruleCode)
                     )
                   )
                 | map({file: .file, rule: .rule, priority: .priority})
