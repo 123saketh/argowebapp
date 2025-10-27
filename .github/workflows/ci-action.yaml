@@ -1,4 +1,4 @@
-name: Build Step # The name of your workflow, which appears in GitHub checks
+name: Build Step
 
 on:
   push:
@@ -11,13 +11,11 @@ jobs:
     name: Kiuwan security scan test
     runs-on: ubuntu-latest
     env:
-      # Define a job-level environment variable for the application name.
+      # --- Kiuwan configuration ---
       APPLICATION_NAME: "TestEquity - Spire BluePrint"
-      # Define the API URL as an environment variable for the job
       KIUWAN_API_URL: "https://api.kiuwan.com"
-      # --- ⚠️ For test use only (do NOT commit this in org repos) ---
-      KIUWAN_USER: "sdahagam"
-      KIUWAN_PASS: "12!@PeckEpfo"
+      KIUWAN_USER: "sdahagam"          # ⚠️ for testing only
+      KIUWAN_PASS: "12!@PeckEpfo"      # ⚠️ for testing only
     steps:
       - name: Poll Kiuwan Status and Compare Defects
         if: github.event_name == 'pull_request'
@@ -29,7 +27,6 @@ jobs:
           SLEEP_SECONDS=30
           ATTEMPT=0
           STATUS="EXECUTING"
-
           NEW_VULNERABILITIES_JSON="[]"
           REMOVED_VULNERABILITIES_JSON="[]"
           NEW_VULNERABILITIES_COUNT=0
@@ -102,12 +99,10 @@ jobs:
             FULL_NEW_DEFECTS_JSON=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
               "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE/defects/compare/$BASELINE_CODE/new")
 
-            JSON_TYPE=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -r 'type' 2>/dev/null || echo "invalid")
-            if [ "$JSON_TYPE" != "object" ]; then
-              echo "Warning: Invalid JSON in new defects."
-              NEW_VULNERABILITIES_JSON="[]"
-            else
-              NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES" '
+            # --- SAFER jq filtering (prevents exit 5) ---
+            set +e
+            NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES" '
+              if (type == "object" and has("New defects")) then
                 (."New defects" // [])
                 | map(
                     select(
@@ -119,7 +114,16 @@ jobs:
                     )
                   )
                 | map({file: .file, rule: .rule, priority: .priority})
-              ' 2>/dev/null)
+              else
+                []
+              end
+            ' 2>/dev/null)
+            jq_exit=$?
+            set -e
+
+            if [ $jq_exit -ne 0 ] || [ -z "$NEW_VULNERABILITIES_JSON" ] || [ "$NEW_VULNERABILITIES_JSON" = "null" ]; then
+              echo "Warning: jq filtering failed or returned invalid JSON. Defaulting to []."
+              NEW_VULNERABILITIES_JSON="[]"
             fi
 
             NEW_VULNERABILITIES_COUNT=$(echo "$NEW_VULNERABILITIES_JSON" | jq 'length')
@@ -130,9 +134,13 @@ jobs:
               "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE/defects/compare/$BASELINE_CODE/removed")
 
             REMOVED_VULNERABILITIES_JSON=$(echo "$FULL_REMOVED_DEFECTS_JSON" | jq -c '
-              (."Removed defects" // [])
-              | map(select(type=="object" and has("ruleCode") and has("rule") and (.muted | not)))
-              | map({file: .file, rule: .rule, priority: .priority})
+              if (type == "object" and has("Removed defects")) then
+                (."Removed defects" // [])
+                | map(select(type=="object" and has("ruleCode") and has("rule") and (.muted | not)))
+                | map({file: .file, rule: .rule, priority: .priority})
+              else
+                []
+              end
             ' 2>/dev/null)
           fi
 
