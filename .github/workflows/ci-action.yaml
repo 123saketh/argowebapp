@@ -86,7 +86,13 @@ jobs:
               end
             ' 2>/dev/null)
       
+            # Validate SECURITY_RULE_CODES
             if [ -z "$SECURITY_RULE_CODES" ] || [ "$SECURITY_RULE_CODES" = "null" ]; then
+              SECURITY_RULE_CODES="[]"
+            fi
+      
+            if ! echo "$SECURITY_RULE_CODES" | jq empty 2>/dev/null; then
+              echo "SECURITY_RULE_CODES is not valid JSON. Defaulting to empty array."
               SECURITY_RULE_CODES="[]"
             fi
       
