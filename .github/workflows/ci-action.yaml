@@ -114,19 +114,34 @@ jobs:
             echo $FULL_NEW_DEFECTS_JSON
 
             echo "Got FULL_NEW_DEFECTS_JSON"
-            
-            NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES_SAFE" '
-                # jq filter content (indented heavily to avoid YAML conflict)
-                if (type == "object" and has("New defects")) then
-                    echo "yes"
-                else
-                    []
-                end
-            ' 2>/dev/null) # <-- THIS CLOSING LINE MUST BE INDENTED CONSISTENTLY
-            
-            # The jq_exit assignment must align with other shell commands in the block
-            jq_exit=$?
 
+            JQ_FILTER='
+            if (type == "object" and has("New defects")) then
+                (."New defects" // [])
+                | map(
+                    select(
+                        type == "object"
+                        and has("ruleCode")
+                        and has("rule")
+                        and (.muted | not)
+                        and any($security_rules[]; . == .ruleCode)
+                    )
+                )
+                | map({file: .file, rule: .rule, priority: .priority})
+            else
+                []
+            end
+            '
+            
+            echo "$JQ_FILTER"
+            
+            # Execution of jq using the single-line variable
+            NEW_VULNERABILITIES_JSON=$(
+                echo "$FULL_NEW_DEFECTS_JSON" | 
+                jq -c --argjson security_rules "$SECURITY_RULE_CODES_SAFE" "$JQ_FILTER" 2>/dev/null
+            )
+            jq_exit=$?
+            
             echo "Came here"
       
             if [ $jq_exit -ne 0 ] || [ -z "$NEW_VULNERABILITIES_JSON" ] || [ "$NEW_VULNERABILITIES_JSON" = "null" ]; then
