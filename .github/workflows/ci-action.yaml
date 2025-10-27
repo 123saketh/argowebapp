@@ -113,7 +113,9 @@ jobs:
 
             echo "Got FULL_NEW_DEFECTS_JSON"
             
-            NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c . as $input | ($ENV.SECURITY_RULES_JSON | fromjson) as $security_rules_array |
+            NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c '
+                . as $input | 
+                ($ENV.SECURITY_RULES_JSON | fromjson) as $security_rules_array |
               if ($input | type == "object" and has("New defects")) then
                 ($input."New defects" // [])
                 | map(
