@@ -16,7 +16,10 @@ jobs:
       KIUWAN_API_URL: "https://api.kiuwan.com"
       KIUWAN_USER: "sdahagam"          # ⚠️ for testing only
       KIUWAN_PASS: "12!@PeckEpfo"      # ⚠️ for testing only
-    steps:
+    steps:            
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Poll Kiuwan Status and Compare Defects
         if: github.event_name == 'pull_request'
         id: check_quality_gate
