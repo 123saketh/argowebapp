@@ -130,6 +130,8 @@ jobs:
               end
             ' 2>/dev/null)
             jq_exit=$?
+
+            echo "Came here"
       
             if [ $jq_exit -ne 0 ] || [ -z "$NEW_VULNERABILITIES_JSON" ] || [ "$NEW_VULNERABILITIES_JSON" = "null" ]; then
               echo "Warning: jq filtering failed or returned invalid JSON. Defaulting to []."
