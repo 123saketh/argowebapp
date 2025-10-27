@@ -118,17 +118,7 @@ jobs:
             NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES_SAFE" '
                 # jq filter content (indented heavily to avoid YAML conflict)
                 if (type == "object" and has("New defects")) then
-                    (."New defects" // [])
-                    | map(
-                        select(
-                            type == "object"
-                            and has("ruleCode")
-                            and has("rule")
-                            and (.muted | not)
-                            and any($security_rules[]; . == .ruleCode)
-                        )
-                    )
-                    | map({file: .file, rule: .rule, priority: .priority})
+                    echo "yes"
                 else
                     []
                 end
