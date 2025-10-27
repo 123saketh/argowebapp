@@ -179,3 +179,51 @@ jobs:
           else
             echo "quality_gate_status=PASSED" >> $GITHUB_OUTPUT
           fi
+      - name: Post Kiuwan Comment 📝
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.G_TOKEN }}
+          script: |
+            function groupDefects(defectsJson) {
+              if (!defectsJson || defectsJson === '[]') return [];
+              const defects = JSON.parse(defectsJson);
+              const grouped = new Map();
+              for (const d of defects) {
+                const key = `${d.rule}|${d.file}|${d.priority}`;
+                if (grouped.has(key)) grouped.get(key).count++;
+                else grouped.set(key, { ...d, count: 1 });
+              }
+              return Array.from(grouped.values());
+            }
+
+            const gateStatus = '${{ steps.check_quality_gate.outputs.quality_gate_status }}';
+            const newDefectsJson = '${{ steps.check_quality_gate.outputs.new_vulnerabilities }}';
+            const removedDefectsJson = '${{ steps.check_quality_gate.outputs.removed_vulnerabilities }}';
+
+            let emoji = '', message = '';
+            if (gateStatus === 'PASSED') { emoji = '✅'; message = 'No new vulnerabilities found.'; }
+            else if (gateStatus === 'FAILED') { emoji = '❌'; message = 'New vulnerabilities detected.'; }
+            else if (gateStatus === 'NO_BASELINE') { emoji = '⚠️'; message = 'No baseline analysis found.'; }
+            else if (gateStatus === 'IN_PROGRESS') { emoji = '⏳'; message = 'Analysis still running.'; }
+
+            let comment = `### Kiuwan Analysis Results\n**Status:** ${emoji} ${message}\n`;
+
+            const newGrouped = groupDefects(newDefectsJson);
+            if (newGrouped.length > 0) {
+              comment += '\n**New Vulnerabilities**\n\n| Rule | File | Priority | Count |\n|------|------|----------|:-----:|\n';
+              comment += newGrouped.map(d => `| ${d.rule} | \`${d.file}\` | **${d.priority}** | ${d.count} |`).join('\n');
+            }
+
+            const removedGrouped = groupDefects(removedDefectsJson);
+            if (removedGrouped.length > 0) {
+              comment += '\n\n**Defects Removed**\n\n| Rule | File | Priority | Count |\n|------|------|----------|:-----:|\n';
+              comment += removedGrouped.map(d => `| ${d.rule} | \`${d.file}\` | **${d.priority}** | ${d.count} |`).join('\n');
+            }
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            }); 
