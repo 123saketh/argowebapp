@@ -118,7 +118,7 @@ jobs:
             JQ_FILTER='
             ."New defects" // []
             | map(select(.muted == false))
-            | map(select(.ruleCode | IN($security_rules[] ) | not))
+            | map(select(.ruleCode | IN($security_rules[] )))
             | map({file: .file, rule: .rule, priority: .priority})
             '
             
