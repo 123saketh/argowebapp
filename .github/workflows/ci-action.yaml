@@ -33,7 +33,7 @@ jobs:
           NEW_VULNERABILITIES_JSON="[]"
           REMOVED_VULNERABILITIES_JSON="[]"
           NEW_VULNERABILITIES_COUNT=0
-          $ANALYSIS_CODE='A-7e9-19a25a8d6da'
+          ANALYSIS_CODE='A-7e9-19a25a8d6da'
           URL_ENCODED_APP_NAME=$(echo "${{ env.APPLICATION_NAME }}" | sed 's/ /%20/g')
 
           echo "Fetching baseline 'develop' analysis..."
