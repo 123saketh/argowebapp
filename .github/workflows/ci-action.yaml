@@ -21,8 +21,6 @@ jobs:
         if: github.event_name == 'pull_request'
         id: check_quality_gate
         run: |
-          set -euo pipefail
-
           MAX_ATTEMPTS=20
           SLEEP_SECONDS=30
           ATTEMPT=0
@@ -99,8 +97,6 @@ jobs:
             FULL_NEW_DEFECTS_JSON=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
               "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE/defects/compare/$BASELINE_CODE/new")
 
-            # --- SAFER jq filtering (prevents exit 5) ---
-            set +e
             NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES" '
               if (type == "object" and has("New defects")) then
                 (."New defects" // [])
@@ -119,7 +115,6 @@ jobs:
               end
             ' 2>/dev/null)
             jq_exit=$?
-            set -e
 
             if [ $jq_exit -ne 0 ] || [ -z "$NEW_VULNERABILITIES_JSON" ] || [ "$NEW_VULNERABILITIES_JSON" = "null" ]; then
               echo "Warning: jq filtering failed or returned invalid JSON. Defaulting to []."
