@@ -133,14 +133,42 @@ jobs:
             end
             '
             
-            echo "$JQ_FILTER"
+            echo "JQ_FILTER: $JQ_FILTER"
             
-            # Execution of jq using the single-line variable
-            NEW_VULNERABILITIES_JSON=$(
-                echo "$FULL_NEW_DEFECTS_JSON" | 
-                jq -c --argjson security_rules "$SECURITY_RULE_CODES_SAFE" "$JQ_FILTER" 2>/dev/null
-            )
+            # Debug: Check if input JSON is valid
+            echo "Checking if input JSON is valid..."
+            echo "$FULL_NEW_DEFECTS_JSON" | jq . > /dev/null
+            input_valid=$?
+            echo "Input JSON valid: $input_valid"
+            
+            # Debug: Check security rules
+            echo "SECURITY_RULE_CODES_SAFE: $SECURITY_RULE_CODES_SAFE"
+            
+            # Debug: Test jq filter step by step
+            echo "Testing jq filter step by step..."
+            
+            # Test 1: Basic structure
+            echo "Test 1 - Basic structure:"
+            echo "$FULL_NEW_DEFECTS_JSON" | jq 'type' 2>/dev/null
+            echo "Exit code: $?"
+            
+            # Test 2: Check if "New defects" exists
+            echo "Test 2 - Check New defects:"
+            echo "$FULL_NEW_DEFECTS_JSON" | jq 'has("New defects")' 2>/dev/null
+            echo "Exit code: $?"
+            
+            # Test 3: Simple filter first
+            echo "Test 3 - Simple filter:"
+            SIMPLE_FILTER='."New defects" // [] | length'
+            echo "$FULL_NEW_DEFECTS_JSON" | jq -c "$SIMPLE_FILTER" 2>/dev/null
+            echo "Exit code: $?"
+            
+            # Now try the full filter with better error handling
+            echo "Executing full jq filter..."
+            NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES_SAFE" "$JQ_FILTER" 2>&1)
             jq_exit=$?
+            echo "jq exit code: $jq_exit"
+            echo "jq output: $NEW_VULNERABILITIES_JSON"
             
             echo "Came here"
       
