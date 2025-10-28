@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # --- Kiuwan configuration ---
-      APPLICATION_NAME: "TestEquity - Spire BluePrint"
+      APPLICATION_NAME: "TestEquity - Extensions"
       KIUWAN_API_URL: "https://api.kiuwan.com"
       KIUWAN_USER: "sdahagam"          # ⚠️ for testing only
       KIUWAN_PASS: "12!@PeckEpfo"      # ⚠️ for testing only
@@ -31,7 +31,7 @@ jobs:
           NEW_VULNERABILITIES_JSON="[]"
           REMOVED_VULNERABILITIES_JSON="[]"
           NEW_VULNERABILITIES_COUNT=0
-          ANALYSIS_CODE='A-7e9-19a25a8d6da'
+          ANALYSIS_CODE='A-7e9-19a2aea949a'
           URL_ENCODED_APP_NAME=$(echo "${{ env.APPLICATION_NAME }}" | sed 's/ /%20/g')
       
           echo "Fetching baseline 'develop' analysis..."
@@ -77,8 +77,10 @@ jobs:
             echo "Found $NEW_DEFECTS_COUNT_RAW new defects. Filtering for SAST only..."
       
             SECURITY_RULES_RESPONSE=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
-              "${{ env.KIUWAN_API_URL }}/violatedrules?application=$URL_ENCODED_APP_NAME&code=$ANALYSIS_CODE&characteristic=Security&onlyCodeSecurity=true")
-      
+              "${{ env.KIUWAN_API_URL }}/violatedrules?application=$URL_ENCODED_APP_NAME&code=$ANALYSIS_CODE&onlyCodeSecurity=true")
+           
+            echo $SECURITY_RULES_RESPONSE
+            
             SECURITY_RULE_CODES=$(echo "$SECURITY_RULES_RESPONSE" | jq -rc '
               if (type=="array") then
                 [ .[] | select(type=="object" and has("ruleCode")) | .ruleCode ] | unique
@@ -88,6 +90,8 @@ jobs:
                 []
               end
             ' 2>/dev/null)
+
+             echo $SECURITY_RULE_CODES
       
             # Validate SECURITY_RULE_CODES
             if [ -z "$SECURITY_RULE_CODES" ] || [ "$SECURITY_RULE_CODES" = "null" ]; then
