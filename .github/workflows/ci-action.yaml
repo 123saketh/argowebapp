@@ -177,7 +177,7 @@ jobs:
               # Non-security defects that were removed (NOT in security rules list)
               REMOVED_NON_SECURITY_DEFECTS_JSON=$(echo "$FULL_REMOVED_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES" '
                 if (type == "object" and has("Removed defects")) then
-                  (."Removed defects" // [])
+                  (."New defects" // [])
                   | map(select(type=="object" and has("ruleCode") and has("rule") and (.muted | not)))
                   | map(select(.ruleCode | IN($security_rules[])))
                   | map({file: .file, rule: .rule, priority: .priority})
