@@ -1,143 +1,251 @@
-name: Build Step # The name of your workflow, which appears in GitHub checks
+name: Build Step
 
 on:
-  # This 'push' trigger runs the full CI/CD pipeline (including Docker push and manifest update)
-  # after a successful merge or direct push to 'main'.
   push:
     branches: ['main']
-
-  # This 'pull_request' trigger is for the mandatory pre-merge checks.
-  # It runs the 'build' and 'test-stage' jobs when a PR is opened or updated targeting 'main'.
   pull_request:
-    branches: [ "main" ] # This targets PRs *into* the 'main' branch
+    branches: ['main']
 
 jobs:
-  build:
+  kiuwan-scan:
+    name: Kiuwan security scan test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [v18.17.0]
+    env:
+      # --- Kiuwan configuration ---
+      APPLICATION_NAME: "TestEquity - Extensions"
+      KIUWAN_API_URL: "https://api.kiuwan.com"
+      KIUWAN_USER: "sdahagam"          # ⚠️ for testing only
+      KIUWAN_PASS: "12!@PeckEpfo"      # ⚠️ for testing only
+    steps:            
+      - name: Install jq
+        run: sudo apt-get install -y jq
 
-    steps:
-      - uses: actions/checkout@v3
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build --if-present
-
-  test-stage:
-    runs-on: ubuntu-latest
-    needs: build # Ensures tests run after a successful build
-    steps:
-      - name: Running Tests
-        uses: actions/checkout@v3
-      - run: echo "running tests..." # Replace with your actual test command (e.g., npm test)
-
-  build-and-push-docker-image:
-    name: Build Docker image and push to repositories
-    runs-on: ubuntu-latest
-    needs: ['build', 'test-stage'] # This job requires build and test-stage to succeed.
-    # This 'if' condition ensures this job ONLY runs on 'push' events
-    # to the 'main' branch, NOT on 'pull_request' events.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    # Concurrency group to prevent multiple concurrent deployments for the 'main' branch.
-    # Only one workflow run in this group can be in progress at a time.
-    # New runs will automatically cancel older, currently running jobs in the same group.
-    concurrency:
-      group: ${{ github.workflow }}-main-deployment
-      cancel-in-progress: true
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USER }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Login to Github Packages
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.ARGO_USER }}
-          password: ${{ secrets.G_TOKEN }}
-      - name: Build image and push to Docker Hub and GitHub Container Registry
-        uses: docker/build-push-action@v2
-        id: docker_build # Add an ID to reference outputs
-        with:
-          context: ./
-          tags: |
-            123saketh/argoreactapp:${{ github.sha }}
-            ghcr.io/123saketh/argoreactapp:${{ github.sha }}
-          push: true # 'push' is now controlled by the job's 'if' condition and concurrency
-          build-args: |
-            PUBLIC_URL=/react-app
-      - name: Image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
-
-  update-manifest-stage:
-    runs-on: ubuntu-latest
-    needs: ['build-and-push-docker-image'] # This job depends on the Docker image push passing.
-    # This 'if' condition ensures this job ONLY runs on 'push' events
-    # to the 'main' branch, NOT on 'pull_request' events.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    # Use the same concurrency group to ensure manifest updates are also serialized
-    concurrency:
-      group: ${{ github.workflow }}-main-deployment
-      cancel-in-progress: true
-
-    steps:
-      - name: Checkout ArgoInfra Repository
-        uses: actions/checkout@v3
-        with:
-          repository: 123saketh/argoinfra
-          ref: 'main' # Assuming ArgoInfra's main is where manifests are
-          token: ${{ secrets.G_TOKEN }}
-      - name: Setup Git Config
+      - name: Poll Kiuwan Status and Compare Defects
+        if: github.event_name == 'pull_request'
+        id: check_quality_gate
         run: |
-          git config --global user.email "${{secrets.ARGO_EMAIL}}"
-          git config --global user.name "${{secrets.ARGO_USER}}"
-
-      - name: Update Deployment YAML
-        id: update_deployment_yaml # Add an ID for potential conditional steps
-        run: |
-          echo "Current workflow SHA: ${{ github.sha }}"
-          # Extract currently deployed SHA from the manifest.
-          # Adjust the grep/sed pattern if the image URL changes.
-          CURRENT_DEPLOYED_IMAGE_LINE=$(grep "123saketh/argoreactapp:" react-app/deployment.yaml || true) # '|| true' prevents error if line not found
-          CURRENT_DEPLOYED_SHA=""
-          if [[ -n "$CURRENT_DEPLOYED_IMAGE_LINE" ]]; then
-            CURRENT_DEPLOYED_SHA=$(echo "$CURRENT_DEPLOYED_IMAGE_LINE" | sed -n 's/.*argoreactapp:\([^#]*\).*/\1/p')
+          MAX_ATTEMPTS=20
+          SLEEP_SECONDS=30
+          ATTEMPT=0
+          STATUS="EXECUTING"
+          NEW_VULNERABILITIES_JSON="[]"
+          REMOVED_VULNERABILITIES_JSON="[]"
+          NEW_VULNERABILITIES_COUNT=0
+          ANALYSIS_CODE='A-7e9-19a2aea949a'
+          URL_ENCODED_APP_NAME=$(echo "${{ env.APPLICATION_NAME }}" | sed 's/ /%20/g')
+      
+          echo "Fetching baseline 'develop' analysis..."
+          ANALYSES=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
+            "${{ env.KIUWAN_API_URL }}/applications/analyses?application=$URL_ENCODED_APP_NAME&count=30&filterPurgedAnalyses=true&success=true")
+      
+          BASELINE_CODE=$(echo "$ANALYSES" | jq -r '[.[] | select(.label == "develop" and .analysisScope == "Baseline")] | sort_by(.creationDate) | last | .code')
+      
+          if [ "$BASELINE_CODE" == "null" ] || [ -z "$BASELINE_CODE" ]; then
+            echo "Warning: No baseline found for 'develop'."
+            echo "quality_gate_status=NO_BASELINE" >> $GITHUB_OUTPUT
+            exit 0
           fi
+      
+          echo "Baseline analysis code: $BASELINE_CODE"
+      
+          while [ "$STATUS" == "EXECUTING" ] && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            echo "Waiting for analysis to finish... Attempt $((ATTEMPT+1))"
+            sleep $SLEEP_SECONDS
+            API_RESPONSE=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
+              "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE")
+            STATUS=$(echo "$API_RESPONSE" | jq -r '.analysisStatus // empty')
+            ATTEMPT=$((ATTEMPT+1))
+          done
+      
+          if [ "$STATUS" != "FINISHED" ]; then
+            echo "Analysis not completed in time. Status: $STATUS"
+            echo "quality_gate_status=IN_PROGRESS" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+      
+          COMPARE_SUMMARY=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
+            "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE/defects/compare/$BASELINE_CODE")
+      
+          echo "--- DEBUG: RAW COMPARE_SUMMARY ---"
+          echo "$COMPARE_SUMMARY"
+          echo "-----------------------------------"
+      
+          NEW_DEFECTS_COUNT_RAW=$(echo "$COMPARE_SUMMARY" | jq -r '."New defects count" // 0')
+          REMOVED_DEFECTS_COUNT_RAW=$(echo "$COMPARE_SUMMARY" | jq -r '."Removed defects count" // 0')
+      
+          if [ "$NEW_DEFECTS_COUNT_RAW" -gt 0 ]; then
+            echo "Found $NEW_DEFECTS_COUNT_RAW new defects. Filtering for SAST only..."
+      
+            SECURITY_RULES_RESPONSE=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
+              "${{ env.KIUWAN_API_URL }}/violatedrules?application=$URL_ENCODED_APP_NAME&code=$ANALYSIS_CODE&onlyCodeSecurity=true")
+           
+            echo $SECURITY_RULES_RESPONSE
+            
+            SECURITY_RULE_CODES=$(echo "$SECURITY_RULES_RESPONSE" | jq -rc '
+              if (type=="array") then
+                [ .[] | select(type=="object" and has("ruleCode")) | .ruleCode ] | unique
+              elif (type=="object" and has("ruleCode")) then
+                [ .ruleCode ]
+              else
+                []
+              end
+            ' 2>/dev/null)
 
-          echo "Currently deployed SHA in manifest: $CURRENT_DEPLOYED_SHA"
+             echo $SECURITY_RULE_CODES
+      
+            # Validate SECURITY_RULE_CODES
+            if [ -z "$SECURITY_RULE_CODES" ] || [ "$SECURITY_RULE_CODES" = "null" ]; then
+              SECURITY_RULE_CODES="[]"
+            fi
+      
+            if ! echo "$SECURITY_RULE_CODES" | jq empty 2>/dev/null; then
+              echo "SECURITY_RULE_CODES is not valid JSON. Defaulting to empty array."
+              SECURITY_RULE_CODES="[]"
+            fi
+      
+            echo "--- DEBUG: SECURITY RULE CODES ---"
+            echo "$SECURITY_RULE_CODES" | jq .
+            echo "----------------------------------"
 
-          # Simple comparison: if our SHA is older than or equal to the one already deployed, skip.
-          # This relies on lexical comparison of SHAs, which generally works for linear history.
-          if [ -n "$CURRENT_DEPLOYED_SHA" ] && [ "${{ github.sha }}" < "$CURRENT_DEPLOYED_SHA" ]; then
-            echo "Current workflow SHA (${{ github.sha }}) is older than currently deployed SHA ($CURRENT_DEPLOYED_SHA). Skipping manifest update to prevent rollback."
-            echo "::set-output name=skipped::true" # Set output to indicate skip
-            exit 0 # Exit successfully to indicate no error, but skip the update
+            echo $SECURITY_RULE_CODES
+            # This ensures it is always strict, compact JSON, safe for --argjson.
+            SECURITY_RULE_CODES_SAFE=$(echo "$SECURITY_RULE_CODES" | jq -c .)
+            echo $SECURITY_RULE_CODES_SAFE
+      
+            FULL_NEW_DEFECTS_JSON=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
+              "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE/defects/compare/$BASELINE_CODE/new")
+      
+            echo $FULL_NEW_DEFECTS_JSON
+
+            echo "Got FULL_NEW_DEFECTS_JSON"
+
+            JQ_FILTER='
+            ."New defects" // []
+            | map(select(.muted == false))
+            | map(select(.ruleCode | IN($security_rules[] )))
+            | map({file: .file, rule: .rule, priority: .priority})
+            '
+            
+            echo "Executing jq filter..."
+            NEW_VULNERABILITIES_JSON=$(echo "$FULL_NEW_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES_SAFE" "$JQ_FILTER")
+            jq_exit=$?
+            
+            echo "jq exit code: $jq_exit"
+            if [ $jq_exit -eq 0 ]; then
+                echo "SUCCESS: Filter executed successfully"
+                echo "Found vulnerabilities: $NEW_VULNERABILITIES_JSON"
+            else
+                echo "ERROR: jq failed with exit code $jq_exit"
+                NEW_VULNERABILITIES_JSON="[]"
+            fi
+            
+            echo "Came here"
+      
+            if [ $jq_exit -ne 0 ] || [ -z "$NEW_VULNERABILITIES_JSON" ] || [ "$NEW_VULNERABILITIES_JSON" = "null" ]; then
+              echo "Warning: jq filtering failed or returned invalid JSON. Defaulting to []."
+              echo "Raw JSON: $FULL_NEW_DEFECTS_JSON"
+              NEW_VULNERABILITIES_JSON="[]"
+            fi
+
+             echo $NEW_VULNERABILITIES_JSON
+
+            echo "Got NEW_VULNERABILITIES_JSON"
+      
+            echo "--- DEBUG: NEW VULNERABILITIES JSON ---"
+            echo "$NEW_VULNERABILITIES_JSON" | jq .
+            echo "--------------------------------------"
+      
+            NEW_VULNERABILITIES_COUNT=$(echo "$NEW_VULNERABILITIES_JSON" | jq 'length')
+          fi
+      
+          if [ "$REMOVED_DEFECTS_COUNT_RAW" -gt 0 ]; then
+              FULL_REMOVED_DEFECTS_JSON=$(curl -s --user "${{ env.KIUWAN_USER }}:${{ env.KIUWAN_PASS }}" \
+                "${{ env.KIUWAN_API_URL }}/apps/analysis/$ANALYSIS_CODE/defects/compare/$BASELINE_CODE/removed")
+          
+              # Security vulnerabilities that were removed (in security rules list)
+              REMOVED_VULNERABILITIES_JSON=$(echo "$FULL_REMOVED_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES_SAFE" '
+                if (type == "object" and has("Removed defects")) then
+                  (."New defects" // [])
+                  | map(select(type=="object" and has("ruleCode") and has("rule") and (.muted | not)))
+                  | map(select(.ruleCode | IN($security_rules[])))
+                  | map({file: .file, rule: .rule, priority: .priority})
+                else
+                  []
+                end
+              ' 2>/dev/null)
+          
+              # Non-security defects that were removed (NOT in security rules list)
+              REMOVED_NON_SECURITY_DEFECTS_JSON=$(echo "$FULL_REMOVED_DEFECTS_JSON" | jq -c --argjson security_rules "$SECURITY_RULE_CODES" '
+                if (type == "object" and has("Removed defects")) then
+                  (."New defects" // [])
+                  | map(select(type=="object" and has("ruleCode") and has("rule") and (.muted | not)))
+                  | map(select(.ruleCode | IN($security_rules[])))
+                  | map({file: .file, rule: .rule, priority: .priority})
+                else
+                  []
+                end
+              ' 2>/dev/null)
+          fi
+      
+          echo "New SAST Vulnerabilities: $NEW_VULNERABILITIES_COUNT"
+          echo "new_vulnerabilities=$NEW_VULNERABILITIES_JSON" >> $GITHUB_OUTPUT
+          echo "removed_vulnerabilities=$REMOVED_VULNERABILITIES_JSON" >> $GITHUB_OUTPUT
+      
+          if [ "$NEW_VULNERABILITIES_COUNT" -gt 0 ]; then
+            echo "quality_gate_status=FAILED" >> $GITHUB_OUTPUT
+            exit 1
           else
-            echo "Current workflow SHA (${{ github.sha }}) is newer than currently deployed SHA ($CURRENT_DEPLOYED_SHA) or no SHA found. Proceeding with update."
+            echo "quality_gate_status=PASSED" >> $GITHUB_OUTPUT
           fi
+      - name: Post Kiuwan Comment 📝
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.G_TOKEN }}
+          script: |
+            function groupDefects(defectsJson) {
+              if (!defectsJson || defectsJson === '[]') return [];
+              const defects = JSON.parse(defectsJson);
+              const grouped = new Map();
+              for (const d of defects) {
+                const key = `${d.rule}|${d.file}|${d.priority}`;
+                if (grouped.has(key)) grouped.get(key).count++;
+                else grouped.set(key, { ...d, count: 1 });
+              }
+              return Array.from(grouped.values());
+            }
 
-          # Perform the update
-          sed -i "s#123saketh/argoreactapp:.*#123saketh/argoreactapp:${{ github.sha }}#g" react-app/deployment.yaml
-          echo "::set-output name=skipped::false" # Set output to indicate update was performed
+            const gateStatus = '${{ steps.check_quality_gate.outputs.quality_gate_status }}';
+            const newDefectsJson = process.env.NEW_VULNERABILITIES_JSON;
+            const removedDefectsJson = process.env.REMOVED_VULNERABILITIES_JSON;
 
-      - name: Commit and Push Changes
-        # This step will only run if the manifest update was not skipped
-        if: success() && steps.update_deployment_yaml.outputs.skipped != 'true'
-        run: |
-          git add -A
-          git commit -am "Update image for - ${{ github.sha }}"
-          git push origin main
+            let emoji = '', message = '';
+            if (gateStatus === 'PASSED') { emoji = '✅'; message = 'No new vulnerabilities found.'; }
+            else if (gateStatus === 'FAILED') { emoji = '❌'; message = 'New vulnerabilities detected.'; }
+            else if (gateStatus === 'NO_BASELINE') { emoji = '⚠️'; message = 'No baseline analysis found.'; }
+            else if (gateStatus === 'IN_PROGRESS') { emoji = '⏳'; message = 'Analysis still running.'; }
+
+            let comment = `### Kiuwan Analysis Results\n**Status:** ${emoji} ${message}\n`;
+
+            const newGrouped = groupDefects(newDefectsJson);
+            if (newGrouped.length > 0) {
+              comment += '\n**New Vulnerabilities**\n\n| Rule | File | Priority | Count |\n|------|------|----------|:-----:|\n';
+              comment += newGrouped.map(d => `| ${d.rule} | \`${d.file}\` | **${d.priority}** | ${d.count} |`).join('\n');
+            }
+
+            const removedGrouped = groupDefects(removedDefectsJson);
+            if (removedGrouped.length > 0) {
+              comment += '\n\n**Defects Removed**\n\n| Rule | File | Priority | Count |\n|------|------|----------|:-----:|\n';
+              comment += removedGrouped.map(d => `| ${d.rule} | \`${d.file}\` | **${d.priority}** | ${d.count} |`).join('\n');
+            }
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            }); 
+        env:
+          KIUWAN_ANALYSIS_URL: ${{ steps.kiuwan_scan.outputs.kiuwan_analysis_url }}
+          NEW_VULNERABILITIES_JSON: ${{ steps.check_quality_gate.outputs.new_vulnerabilities }}
+          REMOVED_VULNERABILITIES_JSON: ${{ steps.check_quality_gate.outputs.removed_vulnerabilities }}
